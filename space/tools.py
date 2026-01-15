@@ -259,7 +259,7 @@ def run_command(command: str, cwd: str = None) -> str:
         result = subprocess.run(
             command,
             shell=True,
-            executable='/bin/bash',  # Use bash instead of sh
+            executable='/bin/bash',
             capture_output=True,
             text=True,
             timeout=60,
@@ -280,7 +280,6 @@ def run_command(command: str, cwd: str = None) -> str:
         return "Error: Command timed out after 60 seconds"
     except Exception as e:
         return f"Error running command: {e}"
-
 
 
 # Search and Analysis Tools

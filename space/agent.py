@@ -718,56 +718,98 @@ class Agent:
                     self.session_manager.save_session(self.messages)
                 break
             
-            # Execute tools
+            # Execute tools in parallel
+            import concurrent.futures
+            
+            tool_results = []
+            
+            # 1. Print all tool calls first (so user sees plan)
             for tool_call in tool_calls:
                 function_name = tool_call["function"]["name"]
                 arguments = tool_call["function"]["arguments"]
                 
-                # Fix common LLM hallucination where arguments are wrapped
+                # Unwrap arguments if needed (fixes common LLM hallucination)
                 if isinstance(arguments, dict) and "arguments" in arguments and isinstance(arguments["arguments"], dict):
                     if "code" in arguments["arguments"] and function_name == "python_repl":
                          arguments = arguments["arguments"]
                     elif len(arguments) <= 2 and "function_name" in arguments: 
                          arguments = arguments["arguments"]
-
-                # Show tool call - Claude Code style
-                console.print(format_tool_call(function_name, arguments))
                 
-                # Execute with spinner
-                with console.status(f"[dim]Running...[/dim]", spinner="dots"):
-                    content = ""
-                    success = False
+                # Update the tool call with clean arguments
+                tool_call["clean_arguments"] = arguments
+                console.print(format_tool_call(function_name, arguments))
+
+            # 2. Execute concurrently
+            with console.status(f"[dim]Running {len(tool_calls)} tools...[/dim]", spinner="dots") as status:
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future_to_tool = {}
                     
-                    if function_name in self.tools:
-                        try:
-                            result = self.retry_handler.execute_with_retry(
-                                self.tools[function_name], **arguments
+                    for i, tool_call in enumerate(tool_calls):
+                        function_name = tool_call["function"]["name"]
+                        arguments = tool_call.get("clean_arguments", tool_call["function"]["arguments"])
+                        
+                        if function_name in self.tools:
+                            # Submit to executor
+                            future = executor.submit(
+                                self.retry_handler.execute_with_retry, 
+                                self.tools[function_name], 
+                                **arguments
                             )
+                            future_to_tool[future] = (i, function_name)
+                        elif function_name in [t["function"]["name"] for t in self.mcp_manager.get_tool_definitions()]:
+                             # Submit MCP tool execution
+                             future = executor.submit(
+                                 self.mcp_manager.call_tool,
+                                 function_name, 
+                                 arguments
+                             )
+                             future_to_tool[future] = (i, function_name)
+                        else:
+                            # Tool not found - handle synchronously as error
+                            tool_results.append({
+                                "index": i,
+                                "result": {
+                                    "tool_call_id": tool_call.get("id"),
+                                    "role": "tool",
+                                    "name": function_name,
+                                    "content": f"Error: Tool '{function_name}' not found"
+                                },
+                                "success": False,
+                                "name": function_name
+                            })
+
+                    # Collect results as they complete
+                    for future in concurrent.futures.as_completed(future_to_tool):
+                        index, name = future_to_tool[future]
+                        content = ""
+                        success = False
+                        try:
+                            result = future.result()
                             content = str(result)
                             success = "Error" not in content
                         except Exception as e:
                             content = f"Error: {str(e)}"
                             success = False
-                    elif function_name in [t["function"]["name"] for t in self.mcp_manager.get_tool_definitions()]:
-                        # Try to execute as MCP tool
-                        try:
-                            content = self.mcp_manager.call_tool(function_name, arguments)
-                            success = "Error" not in str(content)
-                        except Exception as e:
-                            content = f"Error executing MCP tool: {str(e)}"
-                            success = False
-                    else:
-                        content = f"Error: Tool {function_name} not found"
-                        success = False
+                        
+                        tool_results.append({
+                            "index": index,
+                            "result": {
+                                "tool_call_id": tool_calls[index].get("id"),
+                                "role": "tool",
+                                "name": name,
+                                "content": content
+                            },
+                            "success": success,
+                            "name": name
+                        })
 
-                # Show output - compact style
-                console.print(format_tool_output(function_name, content, success))
-
-                self.messages.append({
-                    "role": "tool",
-                    "content": content,
-                    "name": function_name
-                })
+            # 3. Sort results by original index to maintain order for LLM
+            tool_results.sort(key=lambda x: x["index"])
+            
+            # 4. Print outputs and append to messages
+            for item in tool_results:
+                console.print(format_tool_output(item["name"], item["result"]["content"], item["success"]))
+                self.messages.append(item["result"])
 
     def get_current_model(self) -> str:
         """Get the name of the currently active model."""
