@@ -42,7 +42,7 @@ def search_web(query: str, max_results: int = 5, deep_search: bool = False) -> s
         deep_search: If True, fetches full content of top 3 results
     """
     try:
-        from duckduckgo_search import DDGS
+        from ddgs import DDGS
         
         results = []
         with DDGS() as ddgs:

@@ -692,6 +692,7 @@ class Agent:
             thinking_started = False
             response_started = False
             spinner = None
+            live_display = None
 
             # Start spinner
             spinner = ThinkingSpinner("Working")
@@ -706,6 +707,8 @@ class Agent:
                     if spinner:
                         spinner.__exit__(None, None, None)
                         spinner = None
+                    if live_display:
+                        live_display.stop()
                     console.print(f"[red]✗ Error:[/red] {chunk['error']}")
                     return
 
@@ -747,11 +750,17 @@ class Agent:
                             console.print()
                             console.print()
                             in_thinking = False
-                        if not response_started:
-                            console.print("[bold #06b6d4]●[/] ", end="")
-                            response_started = True
-                        console.print(content_chunk, end="", markup=False)
+                        
                         full_content += content_chunk
+                        
+                        if not live_display:
+                            from rich.live import Live
+                            # Initialize Live display for Markdown rendering
+                            live_display = Live(Markdown(full_content), console=console, refresh_per_second=10)
+                            live_display.start()
+                        else:
+                            # Update existing Live display
+                            live_display.update(Markdown(full_content))
 
                     # Handle tool calls
                     if hasattr(msg, 'tool_calls') and msg.tool_calls:
@@ -763,9 +772,12 @@ class Agent:
             if spinner:
                 spinner.__exit__(None, None, None)
             
-            # End line after streaming
+            # Stop live display if active
+            if live_display:
+                live_display.stop()
+            
+            # End line after streaming if anything was output
             if full_content.strip() or thinking_content.strip():
-                console.print()
                 console.print()  # Space after response
 
             # Append assistant message to history
