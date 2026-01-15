@@ -180,25 +180,39 @@ For straightforward requests, Space acts immediately:
 | | `read_file` | Read file content. |
 | | `write_file` | Write content to a file (creates dirs). |
 | | `edit_file` | Replace exact text block in a file. |
+| | `append_to_file` | Append text to a file. |
 | | `delete_file` | Remove a file. |
 | | `copy_file` | Copy a file. |
 | | `move_file` | Move or rename a file. |
-| | `append_to_file` | Append text to a file. |
+| | `create_directory` | Create a new directory. |
 | | `get_file_info` | Get size and modification time. |
-| **Search** | `search_file` | Search text/regex in a single file. |
+| **Advanced Editing** | `diff_preview` | Preview changes before applying them. |
+| | `undo_edit` | Revert the last edit to a file. |
+| | `batch_edit` | Apply the same edit to multiple files. |
+| **Search & Nav** | `search_file` | Search text/regex in a single file. |
 | | `grep_search` | Search pattern across a directory. |
 | | `find_files` | Find files by filename pattern. |
-| **Git** | `git_status` | Show working tree status. |
+| **Code Intelligence** | `check_syntax` | Fast Python syntax validation. |
+| | `lint_file` | Lint with Ruff (supports auto-fix). |
+| | `format_file` | Format code with Ruff. |
+| | `analyze_project` | Analyze project structure and dependencies. |
+| | `find_definition` | Find symbol definition. |
+| | `find_references` | Find all references to a symbol. |
+| **Git Integration** | `git_status` | Show working tree status. |
 | | `git_diff` | Show changes. |
 | | `git_log` | View commit history. |
 | | `git_add` | Stage files. |
 | | `git_commit` | Commit changes. |
-| **Code Quality** | `check_syntax` | Fast Python syntax validation. |
-| | `lint_file` | Lint with Ruff (supports auto-fix). |
-| | `format_file` | Format code with Ruff. |
 | **System** | `run_command` | Execute shell commands (bash). |
 | | `install_package` | Install pip packages. |
 | | `list_installed_packages` | List pip packages. |
+| | `wait` | Pause execution for a specified duration. |
+| **Testing** | `run_tests` | Run tests (supporting various runners). |
+| | `discover_tests` | Discover available tests. |
+| **Web & MCP** | `fetch_url` | Fetch URL content as markdown. |
+| | `search_web` | Search the web (DuckDuckGo). |
+| | `add_mcp_server` | Connect to an MCP server. |
+| | `remove_mcp_server` | Disconnect an MCP server. |
 | **Sandbox** | `python_repl` | Execute Python code in a safe sandbox. |
 
 ## 📝 Examples

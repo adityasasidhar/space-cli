@@ -69,8 +69,6 @@ def search_web(query: str, max_results: int = 5, deep_search: bool = False) -> s
                 import asyncio
                 
                 output += "\n--- Deep Search Results (Full Content) ---\n"
-                
-                # Take top 3 URLs
                 top_urls = [r.get('href') for r in results[:3] if r.get('href')]
                 if not top_urls:
                     output += "\nNo valid URLs found for deep search."
@@ -79,19 +77,14 @@ def search_web(query: str, max_results: int = 5, deep_search: bool = False) -> s
                     
                     async def _crawl_many():
                         async with AsyncWebCrawler(verbose=False) as crawler:
-                            # Run concurrent crawls
                             crawled_results = await crawler.arun_many(urls=top_urls)
                             return crawled_results
 
-                    # Run async crawl
                     crawled_data = asyncio.run(_crawl_many())
                     
                     for i, result in enumerate(crawled_data):
                         url = top_urls[i]
                         markdown = result.markdown if hasattr(result, 'markdown') else str(result)
-                        # Limit content length to avoid overflowing context too much
-                        markdown = markdown[:8000] + ("\n... (truncated)" if len(markdown) > 8000 else "")
-                        
                         output += f"\n\n### Content from {url}\n"
                         output += f"{'='*40}\n"
                         output += markdown
