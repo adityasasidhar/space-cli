@@ -14,6 +14,7 @@ class ChatModel:
                 model=self.model,
                 messages=messages,
                 tools=tools,
+                think=True,
             )
             return response
         except Exception as e:
@@ -29,6 +30,7 @@ class ChatModel:
                 messages=messages,
                 tools=tools,
                 stream=True,
+                think=True,
             )
             for chunk in stream:
                 yield chunk

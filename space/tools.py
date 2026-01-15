@@ -46,16 +46,62 @@ def write_file(path: str, content: str) -> str:
         return f"Error writing file: {e}"
 
 
+# Backup directory for undo support
+BACKUP_DIR = os.path.expanduser("~/.space/backups")
+os.makedirs(BACKUP_DIR, exist_ok=True)
+
+
+def diff_preview(path: str, old_text: str, new_text: str) -> str:
+    """
+    Preview changes before applying them (unified diff format).
+    
+    Args:
+        path: Path to the file
+        old_text: Text to find
+        new_text: Replacement text
+    """
+    import difflib
+    
+    try:
+        if not os.path.exists(path):
+            return f"Error: File '{path}' does not exist"
+        
+        with open(path, "r") as f:
+            content = f.read()
+        
+        if old_text not in content:
+            return f"Error: old_text not found in file"
+        
+        new_content = content.replace(old_text, new_text)
+        
+        diff = difflib.unified_diff(
+            content.splitlines(keepends=True),
+            new_content.splitlines(keepends=True),
+            fromfile=f"a/{path}",
+            tofile=f"b/{path}"
+        )
+        
+        diff_text = "".join(diff)
+        if not diff_text:
+            return "No changes detected"
+        
+        return f"Preview of changes:\n{diff_text}"
+    except Exception as e:
+        return f"Error generating diff: {e}"
+
 
 def edit_file(path: str, old_text: str, new_text: str) -> str:
     """
     Replace old_text with new_text in a file.
+    Creates a backup for undo support.
     
     Args:
         path: Path to the file to edit
         old_text: Text to find and replace
         new_text: Replacement text
     """
+    import time
+    
     try:
         # Check if file exists
         if not os.path.exists(path):
@@ -71,16 +117,130 @@ def edit_file(path: str, old_text: str, new_text: str) -> str:
         if old_text not in content:
             return f"Error: old_text not found in file. Make sure the text matches exactly."
 
+        # Create backup before editing
+        backup_name = f"{os.path.basename(path)}.{int(time.time())}.bak"
+        backup_path = os.path.join(BACKUP_DIR, backup_name)
+        with open(backup_path, "w") as f:
+            f.write(content)
+        
+        # Store mapping for undo
+        mapping_file = os.path.join(BACKUP_DIR, "undo_mapping.json")
+        import json
+        try:
+            with open(mapping_file, "r") as f:
+                mappings = json.load(f)
+        except:
+            mappings = {}
+        
+        mappings[os.path.abspath(path)] = backup_path
+        with open(mapping_file, "w") as f:
+            json.dump(mappings, f)
+
         new_content = content.replace(old_text, new_text)
 
         with open(path, "w") as f:
             f.write(new_content)
 
-        return f"Successfully edited {path}"
+        return f"Successfully edited {path} (backup: {backup_name})"
     except PermissionError:
         return f"Error: Permission denied editing '{path}'"
     except Exception as e:
         return f"Error editing file: {e}"
+
+
+def undo_edit(path: str) -> str:
+    """
+    Undo the last edit to a file by restoring from backup.
+    
+    Args:
+        path: Path to the file to undo
+    """
+    import json
+    
+    try:
+        abs_path = os.path.abspath(path)
+        mapping_file = os.path.join(BACKUP_DIR, "undo_mapping.json")
+        
+        if not os.path.exists(mapping_file):
+            return f"Error: No undo history found"
+        
+        with open(mapping_file, "r") as f:
+            mappings = json.load(f)
+        
+        if abs_path not in mappings:
+            return f"Error: No backup found for '{path}'"
+        
+        backup_path = mappings[abs_path]
+        
+        if not os.path.exists(backup_path):
+            return f"Error: Backup file no longer exists"
+        
+        # Restore from backup
+        with open(backup_path, "r") as f:
+            backup_content = f.read()
+        
+        with open(path, "w") as f:
+            f.write(backup_content)
+        
+        # Remove from mappings
+        del mappings[abs_path]
+        with open(mapping_file, "w") as f:
+            json.dump(mappings, f)
+        
+        # Clean up backup file
+        os.remove(backup_path)
+        
+        return f"Successfully undone changes to {path}"
+    except Exception as e:
+        return f"Error undoing edit: {e}"
+
+
+def batch_edit(file_pattern: str, old_text: str, new_text: str, directory: str = ".") -> str:
+    """
+    Apply the same edit to multiple files matching a pattern.
+    
+    Args:
+        file_pattern: Glob pattern for files (e.g., "*.py")
+        old_text: Text to find and replace
+        new_text: Replacement text
+        directory: Directory to search in
+    """
+    try:
+        search_path = Path(directory)
+        edited_files = []
+        skipped_files = []
+        
+        for file_path in search_path.rglob(file_pattern):
+            if file_path.is_file():
+                try:
+                    with open(file_path, "r") as f:
+                        content = f.read()
+                    
+                    if old_text in content:
+                        result = edit_file(str(file_path), old_text, new_text)
+                        if "Successfully" in result:
+                            edited_files.append(str(file_path))
+                        else:
+                            skipped_files.append(f"{file_path}: {result}")
+                except:
+                    skipped_files.append(str(file_path))
+        
+        output = f"Batch edit complete:\n"
+        output += f"  Edited: {len(edited_files)} files\n"
+        
+        if edited_files:
+            output += "  Files modified:\n"
+            for f in edited_files[:10]:
+                output += f"    - {f}\n"
+            if len(edited_files) > 10:
+                output += f"    ... and {len(edited_files) - 10} more\n"
+        
+        if skipped_files:
+            output += f"  Skipped: {len(skipped_files)} files\n"
+        
+        return output
+    except Exception as e:
+        return f"Error in batch edit: {e}"
 
 
 def run_command(command: str, cwd: str = None) -> str:
@@ -446,3 +606,22 @@ def python_repl(code: str) -> str:
 
     except Exception as e:
         return f"Error executing code: {e}"
+
+def wait(seconds: int, message: str = "Waiting...") -> str:
+    """
+    Wait for a specified number of seconds.
+    
+    Args:
+        seconds: Number of seconds to wait
+        message: Optional message to display while waiting
+    """
+    import time
+    from rich.console import Console
+    console = Console()
+    
+    try:
+        with console.status(f"[dim]{message}[/dim]", spinner="clock"):
+            time.sleep(seconds)
+        return f"Waited for {seconds} seconds"
+    except Exception as e:
+        return f"Error waiting: {e}"

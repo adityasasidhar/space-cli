@@ -1,4 +1,5 @@
 import json
+import time
 from typing import List, Dict, Any
 import ollama
 from .llm import ChatModel
@@ -9,18 +10,73 @@ from .tools import (
     git_status, git_diff, git_log, git_commit, git_add,
     install_package, list_installed_packages,
     check_syntax, lint_file, format_file,
-    python_repl
+    python_repl,
+    diff_preview, undo_edit, batch_edit,
+    wait
+)
+from .project import (
+    analyze_project, run_tests, discover_tests, find_definition, find_references
 )
 from .prompts import SYSTEM_PROMPT
+from .memory import SessionManager, ContextWindow, RetryHandler
+from .mcp import McpManager
+from .web import fetch_url, search_web
 from rich.console import Console
 
 console = Console()
 
 class Agent:
-    def __init__(self, model_name: str = "qwen3:4b"):
+    def __init__(self, model_name: str = "qwen3:4b", session_id: str = None):
         self.model_name = model_name
         self.llm = ChatModel(model=model_name)
-        self.messages: List[Dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        
+        # Build system prompt with custom instructions if space.md exists
+        system_prompt = self._build_system_prompt()
+        self.messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
+        
+        # Session and context management
+        self.session_manager = SessionManager()
+        self.context_window = ContextWindow(max_tokens=8192)
+        self.retry_handler = RetryHandler(max_retries=3)
+        self.mcp_manager = McpManager()
+        self.mcp_manager.connect_all()
+        
+        # Load existing session or start new one
+        if session_id:
+            try:
+                self.messages = self.session_manager.load_session(session_id)
+                console.print(f"[dim]Resumed session: {session_id}[/dim]")
+            except FileNotFoundError:
+                console.print(f"[yellow]Session '{session_id}' not found, starting new session[/yellow]")
+                self.session_manager.new_session()
+        else:
+            self.session_manager.new_session()
+            
+        self._init_tools()
+    
+    def _build_system_prompt(self) -> str:
+        """Build system prompt with optional custom instructions from space.md"""
+        import os
+        from pathlib import Path
+        
+        prompt = SYSTEM_PROMPT
+        
+        # Look for space.md in current directory
+        space_md_path = Path(os.getcwd()) / "space.md"
+        
+        if space_md_path.exists():
+            try:
+                custom_instructions = space_md_path.read_text().strip()
+                if custom_instructions:
+                    prompt += f"\n\n<custom_instructions>\n{custom_instructions}\n</custom_instructions>"
+                    console.print(f"[dim]✓ Loaded custom instructions from space.md[/dim]")
+            except Exception as e:
+                console.print(f"[yellow]Warning: Could not read space.md: {e}[/yellow]")
+        
+        return prompt
+    
+    def _init_tools(self):
+        """Initialize tool definitions - called after _build_system_prompt"""
         self.tools = {
             "list_files": list_files,
             "read_file": read_file,
@@ -47,6 +103,20 @@ class Agent:
             "lint_file": lint_file,
             "format_file": format_file,
             "python_repl": python_repl,
+            "diff_preview": diff_preview,
+            "undo_edit": undo_edit,
+            "batch_edit": batch_edit,
+            "analyze_project": analyze_project,
+            "run_tests": run_tests,
+            "discover_tests": discover_tests,
+            "find_definition": find_definition,
+            "find_references": find_references,
+            "add_mcp_server": self.mcp_manager.add_server,
+            "add_mcp_server": self.mcp_manager.add_server,
+            "remove_mcp_server": self.mcp_manager.remove_server,
+            "wait": wait,
+            "fetch_url": fetch_url,
+            "search_web": search_web,
         }
         self.tool_definitions = [
             {
@@ -403,42 +473,281 @@ class Agent:
                         "required": ["code"]
                     }
                 }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "diff_preview",
+                    "description": "Preview changes before applying them. Shows a unified diff of what edit_file would do.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string", "description": "Path to the file"},
+                            "old_text": {"type": "string", "description": "Text to find"},
+                            "new_text": {"type": "string", "description": "Replacement text"}
+                        },
+                        "required": ["path", "old_text", "new_text"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "undo_edit",
+                    "description": "Undo the last edit to a file by restoring from backup.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string", "description": "Path to the file to undo"}
+                        },
+                        "required": ["path"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "batch_edit",
+                    "description": "Apply the same text replacement to multiple files matching a pattern.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "file_pattern": {"type": "string", "description": "Glob pattern for files (e.g., '*.py')"},
+                            "old_text": {"type": "string", "description": "Text to find and replace"},
+                            "new_text": {"type": "string", "description": "Replacement text"},
+                            "directory": {"type": "string", "description": "Directory to search in (default: current)"}
+                        },
+                        "required": ["file_pattern", "old_text", "new_text"]
+                    }
+                }
+            },
+            # Phase 3: Code Intelligence
+            {
+                "type": "function",
+                "function": {
+                    "name": "analyze_project",
+                    "description": "Analyze project type, dependencies, and structure. Detects Python, Node, Go, Rust projects.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "directory": {"type": "string", "description": "Directory to analyze (default: current)"}
+                        }
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "run_tests",
+                    "description": "Run project tests (auto-detects pytest, npm test, go test, cargo test).",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "test_path": {"type": "string", "description": "Specific test file/directory (optional)"},
+                            "directory": {"type": "string", "description": "Project directory (default: current)"}
+                        }
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "discover_tests",
+                    "description": "Discover test files in the project without running them.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "directory": {"type": "string", "description": "Directory to search (default: current)"}
+                        }
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "find_definition",
+                    "description": "Find where a function/class is defined using grep patterns.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": {"type": "string", "description": "Function or class name to find"},
+                            "directory": {"type": "string", "description": "Directory to search (default: current)"}
+                        },
+                        "required": ["symbol"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "find_references",
+                    "description": "Find all references to a symbol in the codebase.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": {"type": "string", "description": "Symbol to find references of"},
+                            "directory": {"type": "string", "description": "Directory to search (default: current)"}
+                        },
+                        "required": ["symbol"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "add_mcp_server",
+                    "description": "Add a new MCP server configuration",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "Unique name for the server"},
+                            "command": {"type": "string", "description": "Command to run the server"},
+                            "args": {"type": "array", "items": {"type": "string"}, "description": "Arguments for the command"},
+                            "env": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Environment variables"}
+                        },
+                        "required": ["name", "command"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "remove_mcp_server",
+                    "description": "Remove an MCP server configuration",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "Name of the server to remove"}
+                        },
+                        "required": ["name"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "wait",
+                    "description": "Wait for a specified duration in seconds.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "seconds": {"type": "integer", "description": "Number of seconds to wait"},
+                            "message": {"type": "string", "description": "Optional message to display"}
+                        },
+                        "required": ["seconds"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "fetch_url",
+                    "description": "Fetch and convert web page content to markdown using a headless browser (handles JS).",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "url": {"type": "string", "description": "URL to fetch"}
+                        },
+                        "required": ["url"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_web",
+                    "description": "Search the web for information using DuckDuckGo.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "The search query"},
+                            "max_results": {"type": "integer", "description": "Maximum number of results (default: 5)"},
+                            "deep_search": {"type": "boolean", "description": "If true, fetches full content of top 3 results"}
+                        },
+                        "required": ["query"]
+                    }
+                }
             }
         ]
 
     def chat(self, user_input: str):
-        self.messages.append({"role": "user", "content": user_input})
+        from .ui import format_tool_call, format_tool_output, format_assistant_message, ThinkingSpinner, print_session_info
         
-        from rich.live import Live
-        from rich.spinner import Spinner
-        from rich.panel import Panel
+        self.messages.append({"role": "user", "content": user_input})
+        self.messages = self.context_window.prune_context(self.messages)
+        
         from rich.markdown import Markdown
-        from rich.console import Group
+        
+        # Track input tokens
+        input_tokens = self.context_window.count_message_tokens(self.messages)
         
         while True:
             full_content = ""
+            thinking_content = ""
             tool_calls = []
             
-            # Streaming generation
-            with Live(Spinner("dots", text="Thinking...", style="cyan"), refresh_per_second=10, console=console) as live:
-                stream = self.llm.generate_stream(self.messages, tools=self.tool_definitions)
+            # Add space after user input
+            console.print()
+            
+            # Real-time streaming
+            in_thinking = True
+            # Streaming generation with clean spinner
+            with ThinkingSpinner("Working") as spinner:
+                # Merge native tools with dynamic MCP tools
+                all_tools = self.tool_definitions + self.mcp_manager.get_tool_definitions()
+                stream = self.llm.generate_stream(self.messages, tools=all_tools)
                 
                 for chunk in stream:
                     if "error" in chunk:
-                        live.update(f"[red]Error:[/red] {chunk['error']}")
+                        console.print(f"[red]✗ Error:[/red] {chunk['error']}")
                         return
 
                     if "message" in chunk:
                         msg = chunk["message"]
                         
-                        # Handle content
-                        if "content" in msg and msg["content"]:
-                            full_content += msg["content"]
-                            live.update(Markdown(full_content))
-                        
-                        # Handle tool calls (Ollama usually sends them in the final chunk or distinct chunks)
-                        if "tool_calls" in msg and msg["tool_calls"]:
-                            tool_calls.extend(msg["tool_calls"])
+                        # Handle thinking (from think=True) - stream in real time
+                        think_chunk = None
+                        if hasattr(msg, 'thinking') and msg.thinking:
+                            think_chunk = msg.thinking
+                    elif isinstance(msg, dict) and msg.get("thinking"):
+                        think_chunk = msg["thinking"]
+                    
+                    if think_chunk:
+                        if not thinking_started:
+                            console.print("[dim]", end="", markup=True)
+                            thinking_started = True
+                        # Print thinking without markup to avoid tag issues
+                        console.print(think_chunk, end="", style="dim")
+                        thinking_content += think_chunk
+                    
+                    # Handle content - stream in real time
+                    content_chunk = None
+                    if hasattr(msg, 'content') and msg.content:
+                        content_chunk = msg.content
+                    elif isinstance(msg, dict) and msg.get("content"):
+                        content_chunk = msg["content"]
+                    
+                    if content_chunk:
+                        if in_thinking and thinking_started:
+                            console.print()  # End thinking line
+                            console.print()
+                            in_thinking = False
+                        if not response_started:
+                            console.print("[bold #06b6d4]●[/] ", end="")
+                            response_started = True
+                        console.print(content_chunk, end="", markup=False)
+                        full_content += content_chunk
+                    
+                    # Handle tool calls
+                    if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                        tool_calls.extend(msg.tool_calls)
+                    elif isinstance(msg, dict) and msg.get("tool_calls"):
+                        tool_calls.extend(msg["tool_calls"])
+            
+            # End line after streaming
+            if full_content.strip() or thinking_content.strip():
+                console.print()
+                console.print()  # Space after response
 
             # Append assistant message to history
             assistant_msg = {"role": "assistant", "content": full_content}
@@ -448,6 +757,17 @@ class Agent:
 
             # If no tool calls, we are done
             if not tool_calls:
+                # Track output tokens
+                output_tokens = self.context_window.estimate_tokens(full_content)
+                self.context_window.track_usage(input_tokens, output_tokens)
+                
+                # Show minimal session info
+                stats = self.context_window.get_usage_stats()
+                print_session_info(self.session_manager.current_session_id, stats['total_tokens'])
+                
+                # Auto-save if needed
+                if self.session_manager.should_auto_save():
+                    self.session_manager.save_session(self.messages)
                 break
             
             # Execute tools
@@ -455,43 +775,45 @@ class Agent:
                 function_name = tool_call["function"]["name"]
                 arguments = tool_call["function"]["arguments"]
                 
-                # Fix common LLM hallucination where arguments are wrapped in an 'arguments' key
+                # Fix common LLM hallucination where arguments are wrapped
                 if isinstance(arguments, dict) and "arguments" in arguments and isinstance(arguments["arguments"], dict):
-                    # Unwrap the nested arguments
                     if "code" in arguments["arguments"] and function_name == "python_repl":
                          arguments = arguments["arguments"]
-                    # General case for other tools if needed, but be careful not to break valid args
                     elif len(arguments) <= 2 and "function_name" in arguments: 
-                         # If it looks like {arguments: {...}, function_name: ...} pattern
                          arguments = arguments["arguments"]
 
+                # Show tool call - Claude Code style
+                console.print(format_tool_call(function_name, arguments))
                 
-                # Visual feedback for tool execution
-                console.print(Panel(
-                    Group(
-                        f"[bold blue]Tool:[/bold blue] {function_name}",
-                        f"[dim]Args:[/dim] {json.dumps(arguments, indent=2)}"
-                    ),
-                    title="Executing Tool",
-                    border_style="blue"
-                ))
-                
-                with console.status(f"[bold blue]Running {function_name}...[/bold blue]", spinner="bouncingBar"):
+                # Execute with spinner
+                with console.status(f"[dim]Running...[/dim]", spinner="dots"):
+                    content = ""
+                    success = False
+                    
                     if function_name in self.tools:
                         try:
-                            result = self.tools[function_name](**arguments)
+                            result = self.retry_handler.execute_with_retry(
+                                self.tools[function_name], **arguments
+                            )
                             content = str(result)
+                            success = "Error" not in content
                         except Exception as e:
-                            content = f"Error executing tool: {str(e)}"
+                            content = f"Error: {str(e)}"
+                            success = False
+                    elif function_name in [t["function"]["name"] for t in self.mcp_manager.get_tool_definitions()]:
+                        # Try to execute as MCP tool
+                        try:
+                            content = self.mcp_manager.call_tool(function_name, arguments)
+                            success = "Error" not in str(content)
+                        except Exception as e:
+                            content = f"Error executing MCP tool: {str(e)}"
+                            success = False
                     else:
                         content = f"Error: Tool {function_name} not found"
+                        success = False
 
-                # Show tool output
-                console.print(Panel(
-                    str(content)[:500] + ("..." if len(str(content)) > 500 else ""),
-                    title=f"Output: {function_name}",
-                    border_style="green" if "Error" not in str(content) else "red"
-                ))
+                # Show output - compact style
+                console.print(format_tool_output(function_name, content, success))
 
                 self.messages.append({
                     "role": "tool",
@@ -544,5 +866,19 @@ class Agent:
         except Exception as e:
             console.print(f"[bold red]Error listing models:[/bold red] {str(e)}")
             return []
-
-
+    
+    def save_session(self) -> str:
+        """Save the current session."""
+        return self.session_manager.save_session(self.messages)
+    
+    def list_sessions(self) -> List[Dict[str, Any]]:
+        """List all available sessions."""
+        return self.session_manager.list_sessions()
+    
+    def get_token_stats(self) -> Dict[str, Any]:
+        """Get current token usage statistics."""
+        return self.context_window.get_usage_stats()
+    
+    def get_session_id(self) -> str:
+        """Get current session ID."""
+        return self.session_manager.current_session_id or "none"

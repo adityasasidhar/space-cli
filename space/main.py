@@ -1,7 +1,15 @@
+"""
+Space CLI - Main entry point.
+Claude Code-inspired interface.
+"""
 import typer
 from rich.console import Console
 from .agent import Agent
-from .ui import print_banner, startup_animation
+from .ui import (
+    print_banner, startup_animation, format_help_panel, 
+    format_models_table, format_sessions_table, format_stats,
+    print_success, print_warning, print_info, THEME
+)
 
 app = typer.Typer()
 console = Console()
@@ -9,121 +17,145 @@ console = Console()
 
 @app.callback()
 def callback():
-    """
-    Space CLI
-    """
+    """Space CLI - Local AI Assistant"""
 
 
 @app.command()
-def start(model: str = "qwen3:4b"):
-    """
-    Start the Space assistant.
-    """
+def start(model: str = "qwen3:4b", session: str = None):
+    """Start the Space assistant."""
     print_banner()
     startup_animation()
 
-    console.print(f"[bold green]Starting Space with model: {model}[/bold green]")
-    console.print("[dim]Type /help for available commands[/dim]\n")
-    agent = Agent(model_name=model)
+    print_info(f"Model: {model}")
+    if session:
+        print_info(f"Resuming session: {session}")
+    console.print()
+    
+    agent = Agent(model_name=model, session_id=session)
 
     from prompt_toolkit import PromptSession
     from prompt_toolkit.history import InMemoryHistory
     from prompt_toolkit.styles import Style
 
-    session = PromptSession(history=InMemoryHistory())
+    prompt_session = PromptSession(history=InMemoryHistory())
 
-    style = Style.from_dict(
-        {
-            "prompt": "bold yellow",
-        }
-    )
+    style = Style.from_dict({
+        "prompt": "#7c3aed bold",  # Purple prompt
+    })
 
     while True:
         try:
-            user_input = session.prompt([("class:prompt", "You: ")], style=style)
+            user_input = prompt_session.prompt([("class:prompt", "❯ ")], style=style)
+
+            if not user_input.strip():
+                continue
 
             if user_input.lower() in ["exit", "quit"]:
                 break
 
-            # Handle special commands
+            # Handle slash commands
             if user_input.strip().startswith("/"):
                 command_parts = user_input.strip().split(maxsplit=1)
                 command = command_parts[0].lower()
 
                 if command == "/models":
-                    # List available models
-                    from rich.table import Table
-
                     models = agent.list_available_models()
-
                     if models:
-                        table = Table(
-                            title="Available Ollama Models",
-                            show_header=True,
-                            header_style="bold magenta",
-                        )
-                        table.add_column("Model Name", style="cyan")
-                        table.add_column("Size", style="green")
-                        table.add_column("Modified", style="yellow")
-
-                        for model in models:
-                            name = model.get("name", "Unknown")
-                            size = f"{model.get('size', 0) / (1024**3):.2f} GB"
-                            modified = model.get("modified_at", "Unknown")
-                            
-                            # Convert datetime to string if needed
-                            if hasattr(modified, 'strftime'):
-                                modified = modified.strftime("%Y-%m-%d %H:%M")
-                            elif modified != "Unknown":
-                                modified = str(modified)
-                            
-                            # Mark current model
-                            if name == agent.get_current_model():
-                                name = f"→ {name} (current)"
-                            table.add_row(name, size, modified)
-
-                        console.print(table)
+                        console.print(format_models_table(models, agent.get_current_model()))
                     else:
-                        console.print(
-                            "[yellow]No models found or error occurred[/yellow]"
-                        )
+                        print_warning("No models found")
                     continue
 
                 elif command == "/model":
-                    # Switch model
                     if len(command_parts) < 2:
-                        console.print("[yellow]Usage: /model <model_name>[/yellow]")
+                        print_warning("Usage: /model <name>")
                     else:
                         new_model = command_parts[1].strip()
-                        agent.switch_model(new_model)
+                        if agent.switch_model(new_model):
+                            print_success(f"Switched to {new_model}")
                     continue
 
                 elif command == "/current":
-                    # Show current model
-                    current = agent.get_current_model()
-                    console.print(f"[bold cyan]Current model:[/bold cyan] {current}")
+                    print_info(f"Model: {agent.get_current_model()}")
                     continue
 
                 elif command == "/help":
-                    # Show help for special commands
-                    from rich.panel import Panel
-
-                    help_text = """[bold]Special Commands:[/bold]
-                                    [cyan]/models[/cyan]          - List all available Ollama models
-                                    [cyan]/model <name>[/cyan]   - Switch to a different model
-                                    [cyan]/current[/cyan]        - Show the currently active model
-                                    [cyan]/help[/cyan]           - Show this help message
-                                    [cyan]exit, quit[/cyan]      - Exit the application"""
-                    console.print(Panel(help_text, title="Help", border_style="blue"))
+                    console.print(format_help_panel())
+                    continue
+                
+                elif command == "/save":
+                    path = agent.save_session()
+                    print_success(f"Session saved")
+                    continue
+                
+                elif command == "/sessions":
+                    sessions = agent.list_sessions()
+                    if sessions:
+                        console.print(format_sessions_table(sessions, agent.get_session_id()))
+                        print_info("Resume with: --session <id>")
+                    else:
+                        print_warning("No saved sessions")
+                    continue
+                
+                elif command == "/stats":
+                    stats = agent.get_token_stats()
+                    console.print(format_stats(stats, agent.get_session_id()))
+                    continue
+                
+                elif command == "/mcp_config":
+                    from pathlib import Path
+                    import os
+                    import subprocess
+                    
+                    config_path = Path.home() / ".space" / "mcp_config.json"
+                    
+                    if not config_path.exists():
+                        config_path.parent.mkdir(parents=True, exist_ok=True)
+                        config_path.write_text('{"servers": {}}')
+                    
+                    import platform
+                    
+                    try:
+                        system = platform.system()
+                        if system == 'Windows':
+                            os.startfile(str(config_path))
+                        elif system == 'Darwin':  # macOS
+                            subprocess.call(('open', str(config_path)))
+                        else:  # Linux/Unix
+                            editor = os.environ.get("EDITOR")
+                            if editor:
+                                subprocess.run([editor, str(config_path)])
+                            else:
+                                # Try common editors
+                                for ed in ["xdg-open", "nano", "vi"]:
+                                    try:
+                                        subprocess.run([ed, str(config_path)])
+                                        break
+                                    except FileNotFoundError:
+                                        continue
+                        
+                        console.print("[dim]Opening config file...[/dim]")
+                        
+                        agent.mcp_manager._load_config()
+                        agent.mcp_manager.connect_all()
+                        print_success("Reloaded MCP configuration")
+                    except Exception as e:
+                        print_warning(f"Error opening editor: {e}")
+                    continue
+                
+                else:
+                    print_warning(f"Unknown command: {command}")
                     continue
 
+            # Chat with agent
             agent.chat(user_input)
 
         except KeyboardInterrupt:
-            console.print("\n[bold red]Exiting...[/bold red]")
+            agent.save_session()
+            console.print(f"\n[{THEME['muted']}]Session saved. Goodbye.[/]")
             break
         except Exception as e:
-            console.print(f"[red]Error:[/red] {e}")
+            console.print(f"[{THEME['error']}]Error: {e}[/]")
 
 
 if __name__ == "__main__":
