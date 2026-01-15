@@ -15,6 +15,7 @@ class ChatModel:
                 messages=messages,
                 tools=tools,
                 think=True,
+                stream=True,
             )
             return response
         except Exception as e:

@@ -112,7 +112,6 @@ class Agent:
             "find_definition": find_definition,
             "find_references": find_references,
             "add_mcp_server": self.mcp_manager.add_server,
-            "add_mcp_server": self.mcp_manager.add_server,
             "remove_mcp_server": self.mcp_manager.remove_server,
             "wait": wait,
             "fetch_url": fetch_url,
@@ -127,9 +126,8 @@ class Agent:
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "path": {"type": "string", "description": "The directory path"}
-                        },
-                        "required": ["path"]
+                            "path": {"type": "string", "description": "The directory path (default: current directory)"}
+                        }
                     }
                 }
             },
@@ -187,7 +185,7 @@ class Agent:
                         "type": "object",
                         "properties": {
                             "command": {"type": "string", "description": "The bash command to run"},
-                            "cwd": {"type": "string", "description": "Optional working directory for the command"}
+                            "cwd": {"type": "string", "description": "Optional working directory for the command (default: current directory)"}
                         },
                         "required": ["command"]
                     }
@@ -691,45 +689,62 @@ class Agent:
             
             # Real-time streaming
             in_thinking = True
-            # Streaming generation with clean spinner
-            with ThinkingSpinner("Working") as spinner:
-                # Merge native tools with dynamic MCP tools
-                all_tools = self.tool_definitions + self.mcp_manager.get_tool_definitions()
-                stream = self.llm.generate_stream(self.messages, tools=all_tools)
-                
-                for chunk in stream:
-                    if "error" in chunk:
-                        console.print(f"[red]✗ Error:[/red] {chunk['error']}")
-                        return
+            thinking_started = False
+            response_started = False
+            spinner = None
 
-                    if "message" in chunk:
-                        msg = chunk["message"]
-                        
-                        # Handle thinking (from think=True) - stream in real time
-                        think_chunk = None
-                        if hasattr(msg, 'thinking') and msg.thinking:
-                            think_chunk = msg.thinking
+            # Start spinner
+            spinner = ThinkingSpinner("Working")
+            spinner.__enter__()
+
+            # Merge native tools with dynamic MCP tools
+            all_tools = self.tool_definitions + self.mcp_manager.get_tool_definitions()
+            stream = self.llm.generate_stream(self.messages, tools=all_tools)
+
+            for chunk in stream:
+                if "error" in chunk:
+                    if spinner:
+                        spinner.__exit__(None, None, None)
+                        spinner = None
+                    console.print(f"[red]✗ Error:[/red] {chunk['error']}")
+                    return
+
+                if "message" in chunk:
+                    msg = chunk["message"]
+
+                    # Handle thinking (from think=True) - stream in real time
+                    think_chunk = None
+                    if hasattr(msg, 'thinking') and msg.thinking:
+                        think_chunk = msg.thinking
                     elif isinstance(msg, dict) and msg.get("thinking"):
                         think_chunk = msg["thinking"]
-                    
+
                     if think_chunk:
+                        # Stop spinner when we start outputting
+                        if spinner:
+                            spinner.__exit__(None, None, None)
+                            spinner = None
                         if not thinking_started:
                             console.print("[dim]", end="", markup=True)
                             thinking_started = True
                         # Print thinking without markup to avoid tag issues
                         console.print(think_chunk, end="", style="dim")
                         thinking_content += think_chunk
-                    
+
                     # Handle content - stream in real time
                     content_chunk = None
                     if hasattr(msg, 'content') and msg.content:
                         content_chunk = msg.content
                     elif isinstance(msg, dict) and msg.get("content"):
                         content_chunk = msg["content"]
-                    
+
                     if content_chunk:
+                        # Stop spinner when we start outputting
+                        if spinner:
+                            spinner.__exit__(None, None, None)
+                            spinner = None
                         if in_thinking and thinking_started:
-                            console.print()  # End thinking line
+                            console.print()
                             console.print()
                             in_thinking = False
                         if not response_started:
@@ -737,12 +752,16 @@ class Agent:
                             response_started = True
                         console.print(content_chunk, end="", markup=False)
                         full_content += content_chunk
-                    
+
                     # Handle tool calls
                     if hasattr(msg, 'tool_calls') and msg.tool_calls:
                         tool_calls.extend(msg.tool_calls)
                     elif isinstance(msg, dict) and msg.get("tool_calls"):
                         tool_calls.extend(msg["tool_calls"])
+
+            # Clean up spinner if still active
+            if spinner:
+                spinner.__exit__(None, None, None)
             
             # End line after streaming
             if full_content.strip() or thinking_content.strip():
