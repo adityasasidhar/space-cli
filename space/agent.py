@@ -5,10 +5,9 @@ import ollama
 from .llm import ChatModel
 from .tools import (
     list_files, read_file, write_file, edit_file, run_command,
-    search_file, grep_search, find_files,
-    delete_file, create_directory, move_file, copy_file, append_to_file, get_file_info,
+    grep_search, find_files,
+    delete_file, create_directory, append_to_file, get_file_info,
     git_status, git_diff, git_log, git_commit, git_add,
-    install_package, list_installed_packages,
     check_syntax, lint_file, format_file,
     python_repl,
     diff_preview, undo_edit, batch_edit,
@@ -83,13 +82,10 @@ class Agent:
             "write_file": write_file,
             "edit_file": edit_file,
             "run_command": run_command,
-            "search_file": search_file,
             "grep_search": grep_search,
             "find_files": find_files,
             "delete_file": delete_file,
             "create_directory": create_directory,
-            "move_file": move_file,
-            "copy_file": copy_file,
             "append_to_file": append_to_file,
             "get_file_info": get_file_info,
             "git_status": git_status,
@@ -97,8 +93,6 @@ class Agent:
             "git_log": git_log,
             "git_commit": git_commit,
             "git_add": git_add,
-            "install_package": install_package,
-            "list_installed_packages": list_installed_packages,
             "check_syntax": check_syntax,
             "lint_file": lint_file,
             "format_file": format_file,
@@ -196,22 +190,6 @@ class Agent:
             {
                 "type": "function",
                 "function": {
-                    "name": "search_file",
-                    "description": "Search for a pattern in a file",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "path": {"type": "string", "description": "The file path"},
-                            "pattern": {"type": "string", "description": "The pattern to search for"},
-                            "use_regex": {"type": "boolean", "description": "Whether to use regex"}
-                        },
-                        "required": ["path", "pattern"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
                     "name": "grep_search",
                     "description": "Search for a pattern across multiple files in a directory",
                     "parameters": {
@@ -265,36 +243,6 @@ class Agent:
                             "path": {"type": "string", "description": "The directory path to create"}
                         },
                         "required": ["path"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "move_file",
-                    "description": "Move or rename a file",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "source": {"type": "string", "description": "Source file path"},
-                            "destination": {"type": "string", "description": "Destination file path"}
-                        },
-                        "required": ["source", "destination"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "copy_file",
-                    "description": "Copy a file",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "source": {"type": "string", "description": "Source file path"},
-                            "destination": {"type": "string", "description": "Destination file path"}
-                        },
-                        "required": ["source", "destination"]
                     }
                 }
             },
