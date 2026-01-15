@@ -125,11 +125,8 @@ def print_banner():
     banner_height = len(banner_lines)
     banner_width = max(len(line) for line in banner_lines)
 
-    # Canvas size
     canvas_width = banner_width + 10
     canvas_height = banner_height + 4
-
-    # Create fixed starfield
     celestial_objects = create_starfield()
 
     # Animate for a few seconds with fixed twinkling pattern

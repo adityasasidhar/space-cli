@@ -19,6 +19,94 @@ Space is a powerful, fully local CLI coding assistant powered by Ollama. It is d
     -   **System**: Run shell commands and manage Python packages.
     -   **Sandbox**: Execute Python code in a safe, isolated environment.
 
+---
+
+## 🛡️ Agent Reliability Features
+
+Space implements multiple reliability mechanisms to ensure robust, predictable behavior even with smaller local models:
+
+### 1. LLM Hallucination Correction
+
+Local models sometimes wrap tool arguments incorrectly. Space automatically detects and fixes nested argument structures:
+
+```python
+# Handles malformed tool calls like:
+# {"arguments": {"arguments": {"code": "..."}, "function_name": "python_repl"}}
+# Automatically unwrapped to:
+# {"code": "..."}
+```
+
+This ensures tool execution succeeds even when the model produces slightly malformed outputs.
+
+### 2. Plan-Execute Workflow with Human Approval
+
+For complex tasks, the agent follows a structured workflow:
+
+1. **Analyze** the request and gather context
+2. **Generate** a detailed step-by-step implementation plan
+3. **Request approval** from the user before proceeding
+4. **Execute** only after explicit confirmation
+
+This prevents unintended file modifications and gives users full control over changes.
+
+### 3. Sandboxed Code Execution
+
+The `python_repl` tool executes code in a fully isolated environment:
+
+- **Process Isolation**: Uses `multiprocessing` to run code in a separate process
+- **Timeout Enforcement**: 5-second hard limit prevents infinite loops
+- **Output Capture**: Captures both stdout and stderr cleanly
+- **Graceful Termination**: Processes are terminated if they exceed the timeout
+
+```python
+# Safe execution with automatic cleanup
+process.join(timeout=5)
+if process.is_alive():
+    process.terminate()  # Force stop runaway code
+```
+
+### 4. Command Execution Safeguards
+
+Shell commands are executed with multiple safety measures:
+
+- **60-second timeout** to prevent hanging operations
+- **Working directory validation** before execution
+- **Bash shell explicitly used** for consistent behavior
+- **Stdout/stderr separation** for clear error reporting
+
+### 5. Code Quality Pipeline
+
+After writing or editing Python code, the agent follows a quality assurance workflow:
+
+```
+write_file → check_syntax → lint_file → format_file
+```
+
+| Step | Tool | Purpose |
+|------|------|---------|
+| 1 | `check_syntax` | Fast AST-based syntax validation |
+| 2 | `lint_file` | Ruff checks for bugs, style issues (auto-fix available) |
+| 3 | `format_file` | PEP 8 compliant formatting |
+
+### 6. Robust Error Handling
+
+Every tool operation is wrapped with comprehensive error handling:
+
+- **File existence checks** before editing
+- **Permission validation** before read/write
+- **Graceful fallbacks** with descriptive error messages
+- **Tool not found** handling for unknown function calls
+
+### 7. Streaming with Live Feedback
+
+The agent uses streaming responses with real-time UI updates:
+
+- Users see the AI's thinking process as it streams
+- Tool executions display progress spinners
+- Output panels show truncated results (max 500 chars) to prevent terminal flooding
+
+---
+
 ## 📋 Prerequisites
 
 1.  **Ollama**: Install Ollama from [ollama.com](https://ollama.com).
@@ -33,7 +121,7 @@ Space is a powerful, fully local CLI coding assistant powered by Ollama. It is d
 1.  **Clone the repository**:
     ```bash
     git clone <repository-url>
-    cd space-coder
+    cd space-cli
     ```
 
 2.  **Create a virtual environment**:
@@ -44,7 +132,7 @@ Space is a powerful, fully local CLI coding assistant powered by Ollama. It is d
 
 3.  **Install dependencies**:
     ```bash
-    pip install -r requirements.txt
+    pip install -e .
     ```
 
 ## 💻 Usage
@@ -126,3 +214,21 @@ For straightforward requests, Space acts immediately:
 
 **Data Analysis:**
 > "Read data.csv and use python code to calculate the average of the 'score' column."
+
+---
+
+## 🏗️ Architecture
+
+```
+space/
+├── main.py      # CLI entry point (Typer), slash commands, REPL loop
+├── agent.py     # Core Agent class, tool registry, chat loop with streaming
+├── llm.py       # Ollama client wrapper with streaming support
+├── prompts.py   # System prompt with workflow instructions
+├── tools.py     # All 20+ tool implementations
+└── ui.py        # Rich terminal UI (banners, animations, panels)
+```
+
+## 📄 License
+
+MIT License
