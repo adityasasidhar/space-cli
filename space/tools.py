@@ -259,7 +259,7 @@ def run_command(command: str, cwd: str = None) -> str:
         result = subprocess.run(
             command,
             shell=True,
-            executable='/bin/bash',
+            executable='/bin/bash',  # Use bash instead of sh
             capture_output=True,
             text=True,
             timeout=60,
@@ -282,7 +282,33 @@ def run_command(command: str, cwd: str = None) -> str:
         return f"Error running command: {e}"
 
 
+
 # Search and Analysis Tools
+def search_file(path: str, pattern: str, use_regex: bool = False) -> str:
+    """Search for a pattern in a file."""
+    try:
+        with open(path, "r") as f:
+            content = f.read()
+
+        lines = content.split("\n")
+        matches = []
+
+        for i, line in enumerate(lines, 1):
+            if use_regex:
+                if re.search(pattern, line):
+                    matches.append(f"Line {i}: {line}")
+            else:
+                if pattern in line:
+                    matches.append(f"Line {i}: {line}")
+
+        if matches:
+            return "\n".join(matches)
+        else:
+            return f"No matches found for '{pattern}' in {path}"
+    except Exception as e:
+        return f"Error searching file: {e}"
+
+
 def grep_search(directory: str, pattern: str, file_pattern: str = "*") -> str:
     """Search for a pattern across multiple files in a directory."""
     try:
@@ -300,11 +326,65 @@ def grep_search(directory: str, pattern: str, file_pattern: str = "*") -> str:
                     continue
 
         if matches:
-            return "\n".join(matches)
+            return "\n".join(matches[:50])  # Limit to 50 matches
         else:
             return f"No matches found for '{pattern}' in {directory}"
     except Exception as e:
         return f"Error searching directory: {e}"
+
+
+def find_files(directory: str, name_pattern: str) -> str:
+    """Find files by name pattern."""
+    try:
+        search_path = Path(directory)
+        matches = []
+
+        for file_path in search_path.rglob(name_pattern):
+            matches.append(str(file_path))
+
+        if matches:
+            return "\n".join(matches)
+        else:
+            return f"No files found matching '{name_pattern}' in {directory}"
+    except Exception as e:
+        return f"Error finding files: {e}"
+
+
+# Advanced File Operations
+def delete_file(path: str) -> str:
+    """Delete a file."""
+    try:
+        os.remove(path)
+        return f"Successfully deleted {path}"
+    except Exception as e:
+        return f"Error deleting file: {e}"
+
+
+def create_directory(path: str) -> str:
+    """Create a new directory."""
+    try:
+        os.makedirs(path, exist_ok=True)
+        return f"Successfully created directory {path}"
+    except Exception as e:
+        return f"Error creating directory: {e}"
+
+
+def move_file(source: str, destination: str) -> str:
+    """Move or rename a file."""
+    try:
+        shutil.move(source, destination)
+        return f"Successfully moved {source} to {destination}"
+    except Exception as e:
+        return f"Error moving file: {e}"
+
+
+def copy_file(source: str, destination: str) -> str:
+    """Copy a file."""
+    try:
+        shutil.copy2(source, destination)
+        return f"Successfully copied {source} to {destination}"
+    except Exception as e:
+        return f"Error copying file: {e}"
 
 
 def append_to_file(path: str, content: str) -> str:
@@ -369,6 +449,7 @@ def list_installed_packages() -> str:
     return run_command("pip list")
 
 
+# Code Quality Tools
 def check_syntax(path: str) -> str:
     """
     Check Python file for syntax errors using ast.parse().

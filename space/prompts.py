@@ -12,13 +12,14 @@ FILE OPERATIONS
 - read_file: View file content
 - write_file: Create or overwrite files (auto-creates directories)
 - edit_file: Precise text replacement in existing files
-- delete_file: File management
+- delete_file, copy_file, move_file: File management
 - append_to_file: Add content to end of file
 - create_directory: Create new directories
 - get_file_info: Get file metadata (size, modified date)
 
 SEARCH & NAVIGATION
 - find_files: Locate files by name pattern
+- search_file: Search within a single file
 - grep_search: Search across multiple files
 
 CODE INTELLIGENCE
@@ -51,6 +52,9 @@ EXTERNAL CONNECTIVITY (MCP)
 - remove_mcp_server: Remove a connected MCP server
 - fetch_url: Fetch and convert web page content to markdown (uses crawl4ai)
 - search_web: Search the web. Use deep_search=True for comprehensive research (fetches top 3 pages).
+
+PACKAGE MANAGEMENT
+- install_package, list_installed_packages: Manage Python dependencies
 </capabilities>
 
 <reasoning_framework>

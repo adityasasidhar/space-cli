@@ -1,123 +1,234 @@
-#  SPACE CLI
+# Space: Local AI Coding Assistant
 
-![Python](https://img.shields.io/badge/Python-3.12%2B-blue?style=for-the-badge&logo=python)
-![Ollama](https://img.shields.io/badge/Powered%20By-Ollama-white?style=for-the-badge&logo=ollama)
-![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
-![Status](https://img.shields.io/badge/Status-Beta-orange?style=for-the-badge)
+Space is a powerful, fully local CLI coding assistant powered by Ollama. It is designed to be a private, secure, and capable alternative to cloud-based coding assistants, offering a rich terminal user interface and a wide range of file and system operations.
 
-**The Private, Agentic Coding Assistant for your Terminal.**
+## 🚀 Features
 
-Space is a next-generation CLI tool that turns your local LLMs (via Ollama) into autonomous coding agents. It doesn't just autocomplete—it **plans**, **searches**, **edits**, and **executes**.
-
-> "Like GitHub Copilot Workspace or Claude Code, but running 100% locally on your machine."
-
----
-
-## Why Space?
-
-*   **🔒 100% Privacy**: Your code never leaves your machine. Powered by local models like `qwen2.5-coder` or `llama3`.
-*   **🧠 Agentic Workflow**: Space doesn't guess; it creates an implementation plan, asks for your approval, and then executes complex multi-file changes.
-*   **🕸️ IRL-Level Research**: Built-in **Deep Search** capabilities allow the agent to search the web and read documentation pages concurrently to solve problems.
-*   **🔌 Unlimited Extensibility**: First-class support for **MCP (Model Context Protocol)**. Connect your agent to databases, Slack, GitHub, or any other API via MCP servers.
-*   **🛡️ Safety First**: Sandboxed execution, syntax checking, linting, and "undo" capabilities ensure your codebase stays healthy.
+-   **100% Local Inference**: Runs entirely on your machine using Ollama models (e.g., Qwen, Llama 3). No data leaves your system.
+-   **Plan-Execute Workflow**: For complex tasks, Space creates detailed implementation plans and requests user approval before making changes.
+-   **Rich Terminal UI**:
+    -   **Live Spinners**: Visual feedback during AI processing.
+    -   **Streaming Output**: Real-time response generation.
+    -   **Markdown Rendering**: Beautifully formatted text and code in the terminal.
+    -   **Panel Layouts**: Organized output for tools and messages.
+-   **Comprehensive Toolset**:
+    -   **File Operations**: Read, write, edit, delete, copy, move, and append to files.
+    -   **Search**: Regex search within files, grep across directories, and file finding.
+    -   **Git Integration**: Check status, view diffs, log history, stage files, and commit changes.
+    -   **Code Quality**: Syntax checking, linting (Ruff), and auto-formatting.
+    -   **System**: Run shell commands and manage Python packages.
+    -   **Sandbox**: Execute Python code in a safe, isolated environment.
 
 ---
 
-## Key Features
+## 🛡️ Agent Reliability Features
 
-### Powerful Toolset
-*   **File Mastery**: Read, write, edit, delete, and organize files with safety checks.
-*   **Git Integration**: `git status`, `diff`, `log`, `add`, and `commit` directly from the agent.
-*   **System Control**: Run bash commands and manage packages.
-*   **Code Intelligence**: AST-based syntax checking, `ruff` linting/formatting, and symbol navigation.
+Space implements multiple reliability mechanisms to ensure robust, predictable behavior even with smaller local models:
 
-### 🌐 Web & Connectivity
-*   **`search_web`**: Search DuckDuckGo for answers.
-*   **Deep Search**: Auto-crawls top results to read full documentation and tutorials.
-*   **`fetch_url`**: Read any URL (including JS-heavy sites) as clean Markdown.
-*   **MCP Support**: Add/remove MCP servers on the fly to give the agent new superpowers.
+### 1. LLM Hallucination Correction
 
-### 💻 User Experience
-*   **Rich UI**: Beautiful terminal output with live spinners, markdown rendering, and syntax highlighting.
-*   **Streaming**: Watch the agent "think" and generating responses in real-time.
-*   **Interactive REPL**: A safe Python sandbox for the agent to test logic before writing code.
+Local models sometimes wrap tool arguments incorrectly. Space automatically detects and fixes nested argument structures:
+
+```python
+# Handles malformed tool calls like:
+# {"arguments": {"arguments": {"code": "..."}, "function_name": "python_repl"}}
+# Automatically unwrapped to:
+# {"code": "..."}
+```
+
+This ensures tool execution succeeds even when the model produces slightly malformed outputs.
+
+### 2. Plan-Execute Workflow with Human Approval
+
+For complex tasks, the agent follows a structured workflow:
+
+1. **Analyze** the request and gather context
+2. **Generate** a detailed step-by-step implementation plan
+3. **Request approval** from the user before proceeding
+4. **Execute** only after explicit confirmation
+
+This prevents unintended file modifications and gives users full control over changes.
+
+### 3. Sandboxed Code Execution
+
+The `python_repl` tool executes code in a fully isolated environment:
+
+- **Process Isolation**: Uses `multiprocessing` to run code in a separate process
+- **Timeout Enforcement**: 5-second hard limit prevents infinite loops
+- **Output Capture**: Captures both stdout and stderr cleanly
+- **Graceful Termination**: Processes are terminated if they exceed the timeout
+
+```python
+# Safe execution with automatic cleanup
+process.join(timeout=5)
+if process.is_alive():
+    process.terminate()  # Force stop runaway code
+```
+
+### 4. Command Execution Safeguards
+
+Shell commands are executed with multiple safety measures:
+
+- **60-second timeout** to prevent hanging operations
+- **Working directory validation** before execution
+- **Bash shell explicitly used** for consistent behavior
+- **Stdout/stderr separation** for clear error reporting
+
+### 5. Code Quality Pipeline
+
+After writing or editing Python code, the agent follows a quality assurance workflow:
+
+```
+write_file → check_syntax → lint_file → format_file
+```
+
+| Step | Tool | Purpose |
+|------|------|---------|
+| 1 | `check_syntax` | Fast AST-based syntax validation |
+| 2 | `lint_file` | Ruff checks for bugs, style issues (auto-fix available) |
+| 3 | `format_file` | PEP 8 compliant formatting |
+
+### 6. Robust Error Handling
+
+Every tool operation is wrapped with comprehensive error handling:
+
+- **File existence checks** before editing
+- **Permission validation** before read/write
+- **Graceful fallbacks** with descriptive error messages
+- **Tool not found** handling for unknown function calls
+
+### 7. Streaming with Live Feedback
+
+The agent uses streaming responses with real-time UI updates:
+
+- Users see the AI's thinking process as it streams
+- Tool executions display progress spinners
+- Output panels show truncated results (max 500 chars) to prevent terminal flooding
 
 ---
 
-## Installation
+## 📋 Prerequisites
 
-Prerequisites: **Python 3.12+** and **[Ollama](https://ollama.com)**.
-
-1.  **Clone the repo**
-    ```bash
-    git clone https://github.com/adityasasidhar/space-cli.git
-    cd space-cli
-    ```
-
-2.  **Install** (using `uv` is recommended, but `pip` works too)
-    ```bash
-    pip install -e .
-    ```
-
-3.  **Pull a Model**
+1.  **Ollama**: Install Ollama from [ollama.com](https://ollama.com).
+2.  **Python 3.10+**: Ensure you have a recent version of Python installed.
+3.  **Models**: Pull a coding-capable model. `qwen2.5-coder` or `qwen3` are recommended.
     ```bash
     ollama pull qwen2.5-coder:7b
     ```
 
-4.  **Launch**
+## 🛠️ Installation
+
+1.  **Clone the repository**:
     ```bash
-    python -m space.main start --model qwen2.5-coder:7b
+    git clone <repository-url>
+    cd space-cli
     ```
 
+2.  **Create a virtual environment**:
+    ```bash
+    python3 -m venv .venv
+    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+    ```
+
+3.  **Install dependencies**:
+    ```bash
+    pip install -e .
+    ```
+
+## 💻 Usage
+
+Start the assistant using the CLI entry point:
+
+```bash
+python -m space.main start
+```
+
+### Command Line Options
+
+-   `--model`: Specify the Ollama model to use (default: `qwen3:4b`).
+    ```bash
+    python -m space.main start --model llama3
+    ```
+
+### Special Slash Commands
+
+-   `/models`: List all available Ollama models on your system.
+-   `/model <name>`: Switch to a different model instantly.
+-   `/current`: Show the currently active model.
+-   `/help`: Display the help menu.
+-   `exit` or `quit`: Close the application.
+
+## 🧠 Workflows
+
+### 1. Planning Mode (Complex Tasks)
+When you ask for a complex change (e.g., "Refactor the database module" or "Create a new web app"), Space enters **Planning Mode**:
+1.  **Analyzes** the request.
+2.  **Generates** a step-by-step implementation plan.
+3.  **Asks** for your approval.
+4.  **Executes** the plan only after you say "yes".
+
+### 2. Direct Mode (Simple Tasks)
+For straightforward requests, Space acts immediately:
+-   "Read main.py" -> Displays content.
+-   "Run ls -la" -> Shows directory listing.
+
+## 🧰 Available Tools
+
+| Category | Tool Name | Description |
+| :--- | :--- | :--- |
+| **File Ops** | `list_files` | List directory contents. |
+| | `read_file` | Read file content. |
+| | `write_file` | Write content to a file (creates dirs). |
+| | `edit_file` | Replace exact text block in a file. |
+| | `delete_file` | Remove a file. |
+| | `copy_file` | Copy a file. |
+| | `move_file` | Move or rename a file. |
+| | `append_to_file` | Append text to a file. |
+| | `get_file_info` | Get size and modification time. |
+| **Search** | `search_file` | Search text/regex in a single file. |
+| | `grep_search` | Search pattern across a directory. |
+| | `find_files` | Find files by filename pattern. |
+| **Git** | `git_status` | Show working tree status. |
+| | `git_diff` | Show changes. |
+| | `git_log` | View commit history. |
+| | `git_add` | Stage files. |
+| | `git_commit` | Commit changes. |
+| **Code Quality** | `check_syntax` | Fast Python syntax validation. |
+| | `lint_file` | Lint with Ruff (supports auto-fix). |
+| | `format_file` | Format code with Ruff. |
+| **System** | `run_command` | Execute shell commands (bash). |
+| | `install_package` | Install pip packages. |
+| | `list_installed_packages` | List pip packages. |
+| **Sandbox** | `python_repl` | Execute Python code in a safe sandbox. |
+
+## 📝 Examples
+
+**Create a new project:**
+> "Create a directory called 'my-app', add a main.py that prints hello world, and a requirements.txt."
+
+**Refactor code:**
+> "Search for all print statements in src/ and replace them with logging calls. Then format the files."
+
+**Git workflow:**
+> "Check git status, add all changes, and commit with message 'Initial feature implementation'."
+
+**Data Analysis:**
+> "Read data.csv and use python code to calculate the average of the 'score' column."
+
 ---
 
-##  Usage Examples
+## 🏗️ Architecture
 
-### 1. The "Research & Fix" Flow
-Space can go online to find solutions.
-> "I'm getting a 'ConnectionRefused' error with my Redis setup. **Search the web** for common causes and fixes, then check my `config.py` to see if I made a mistake."
+```
+space/
+├── main.py      # CLI entry point (Typer), slash commands, REPL loop
+├── agent.py     # Core Agent class, tool registry, chat loop with streaming
+├── llm.py       # Ollama client wrapper with streaming support
+├── prompts.py   # System prompt with workflow instructions
+├── tools.py     # All 20+ tool implementations
+└── ui.py        # Rich terminal UI (banners, animations, panels)
+```
 
-### 2. The "Refactor" Flow
-Space treats code quality seriously.
-> "Analyze the `src/` directory. Find all functions longer than 50 lines, refactor them into smaller helpers, and run the linter to ensure everything is PEP 8 compliant."
+## 📄 License
 
-### 3. The "New Feature" Flow
-Space plans before it acts.
-> "I want to add a new `/stats` endpoint to my FastAPI app. Create a plan to add the route, the service logic, and a unit test. Ask me for approval before writing code."
-
-### 4. The "MCP" Flow
-Connect external tools.
-> "Add the **Postgres MCP server**. Then, inspect my database schema and suggest indices for the `users` table."
-
----
-
-##  Slash Commands
-
-*   `/models`: List available Ollama models.
-*   `/model <name>`: Switch models instantly (e.g., `/model deepseek-r1`).
-*   `/mcp_config`: Open the MCP configuration file in your editor.
-*   `/help`: Show available commands and tools.
-*   `/clear`: Clear the conversation history.
-
----
-
-##  Architecture
-
-Space is built on a modular "Brain" architecture:
-
-*   **`Agent`**: The core orchestrator. Manages memory, context window, and tool dispatch.
-*   **`McpManager`**: Handles connections to external MCP servers via stdio.
-*   **`Web`**: Powers `fetch_url` (Crawl4AI) and `search_web` (DuckDuckGo).
-*   **`Tools`**: A registry of 30+ native capabilities (File, Git, System).
-*   **`UI`**: A stunning interface powered by `rich` and `prompt_toolkit`.
-
----
-
-## Contributing
-
-We love contributions!
-1.  Fork the repo.
-2.  Create a feature branch.
-3.  Submit a PR.
-
-**License**: MIT
+MIT License
