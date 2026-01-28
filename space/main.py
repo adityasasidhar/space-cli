@@ -1,7 +1,3 @@
-"""
-Space CLI - Main entry point.
-Claude Code-inspired interface.
-"""
 import typer
 from rich.console import Console
 from .agent import Agent
@@ -21,7 +17,7 @@ def callback():
 
 
 @app.command()
-def start(model: str = "qwen3:4b", session: str = None):
+def start(model: str = "qwen3:4b-thinking", session: str = None):
     """Start the Space assistant."""
     print_banner()
     startup_animation()

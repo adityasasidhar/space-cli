@@ -26,7 +26,7 @@ from rich.console import Console
 console = Console()
 
 class Agent:
-    def __init__(self, model_name: str = "qwen3:4b", session_id: str = None):
+    def __init__(self, model_name: str = "qwen3:4b-thinking", session_id: str = None):
         self.model_name = model_name
         self.llm = ChatModel(model=model_name)
         
