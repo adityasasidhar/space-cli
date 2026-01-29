@@ -2,6 +2,17 @@
 
 Space is a powerful, fully local CLI coding assistant powered by Ollama. It is designed to be a private, secure, and capable alternative to cloud-based coding assistants, offering a rich terminal user interface and a wide range of file and system operations.
 
+## 💡 Why Space?
+
+In an era of cloud-AI dependencies, Space offers a different path:
+
+1.  **Total Privacy**: Your code never leaves your local machine. No data training, no telemetry.
+2.  **Zero Cost**: Once models are downloaded, there are no per-token costs or subscription fees.
+3.  **Offline Capability**: Work in high-security environments or off-the-grid without losing AI assistance.
+4.  **Customizable**: Switch between models like Qwen, Llama, or Mistral depending on your task.
+
+---
+
 ## 🚀 Features
 
 -   **100% Local Inference**: Runs entirely on your machine using Ollama models (e.g., Qwen, Llama 3). No data leaves your system.
@@ -240,8 +251,16 @@ space/
 ├── llm.py       # Ollama client wrapper with streaming support
 ├── prompts.py   # System prompt with workflow instructions
 ├── tools.py     # All 20+ tool implementations
-└── ui.py        # Rich terminal UI (banners, animations, panels)
+├── ui.py        # Rich terminal UI (banners, animations, panels)
+├── project.py   # Project analysis and structure management
+├── memory.py    # Conversation and context management
+├── mcp.py       # Model Context Protocol (MCP) integration
+└── web.py       # Web search and URL fetching utilities
 ```
+
+### 🌉 Extension Points
+
+Space is designed to be extensible. You can add new tools in `tools.py` and register them in the `Agent` class in `agent.py`. The modular architecture allows for easy integration of new LLM backends or UI components.
 
 ## 📄 License
 
